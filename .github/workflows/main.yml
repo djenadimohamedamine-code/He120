@@ -1,4 +1,4 @@
-name: MIMO_NDI_BUILD
+name: HE120_IOS_BUILD
 on:
   push:
     branches: [ "main", "master" ]
@@ -24,7 +24,7 @@ jobs:
           cp -r ios/Runner ios/Runner.bak
 
       - name: Create_Project
-        run: flutter create --project-name=mimo_ndi --platforms=ios .
+        run: flutter create --project-name=he120_ios --platforms=ios .
 
       - name: Restore_iOS_Files
         run: |
@@ -71,13 +71,13 @@ jobs:
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
-          zip -r MIMO_NDI.ipa Payload
+          zip -r HE120_IOS.ipa Payload
 
       - name: Upload_iOS
         uses: actions/upload-artifact@v4
         with:
-          name: mimo-ndi-ipa
-          path: build/ios/iphoneos/MIMO_NDI.ipa
+          name: he120-ios-ipa
+          path: build/ios/iphoneos/HE120_IOS.ipa
 
   build_android:
     runs-on: ubuntu-latest
@@ -108,7 +108,7 @@ jobs:
           cp android/settings.gradle android/settings.gradle.bak
 
       - name: Create_Project
-        run: flutter create --project-name=mimo_ndi --platforms=android .
+        run: flutter create --project-name=he120_ios --platforms=android .
 
       - name: Restore_Android_Files
         run: |
@@ -133,5 +133,5 @@ jobs:
       - name: Upload_Android
         uses: actions/upload-artifact@v4
         with:
-          name: mimo-ndi-apk
+          name: he120-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
