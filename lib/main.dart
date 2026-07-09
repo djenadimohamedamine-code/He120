@@ -40,9 +40,9 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
-  // IPs des caméras
-  String cam1Ip = "192.168.0.10";
-  String cam2Ip = "192.168.0.11"; 
+  // Proxy relais (IP du PC sur le WiFi)
+  final String proxyHost = "192.168.1.30";
+  final int proxyPort = 8098;
   
   // Caméra active (1 ou 2)
   int activeCam = 1;
@@ -56,16 +56,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
   String lastFocusCmd = "F50";
   
   bool isAutoFocus = false;
-  bool isAutoIris = false;
+  double pedestal = 50;
 
   // Limiteur de vitesse (PTZ/Focus Speed)
   double globalSpeedScale = 1.0; 
 
-  String get currentIp => activeCam == 1 ? cam1Ip : cam2Ip;
+  String get proxyBase => "http://$proxyHost:$proxyPort/cam$activeCam";
 
   // Envoi de commande HTTP PTZ (Pan/Tilt/Zoom)
   Future<void> sendCmd(String cmdStr) async {
-    final url = Uri.parse('http://$currentIp/cgi-bin/aw_ptz?cmd=%23$cmdStr&res=1');
+    final url = Uri.parse('$proxyBase/cgi-bin/aw_ptz?cmd=%23$cmdStr&res=1');
     final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
     try {
       await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
@@ -74,9 +74,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
     }
   }
 
-  // Envoi de commande HTTP CAM (Focus/Iris)
+  // Envoi de commande HTTP CAM (Focus/Iris via aw_ptz compatible HE120)
   Future<void> sendCamCmd(String cmdStr) async {
-    final url = Uri.parse('http://$currentIp/cgi-bin/aw_cam?cmd=%23$cmdStr&res=1');
+    final url = Uri.parse('$proxyBase/cgi-bin/aw_ptz?cmd=%23$cmdStr&res=1');
     final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
     try {
       await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
@@ -184,56 +184,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
     }
   }
 
-  // --- BOITE DE DIALOGUE IP CAM 2 ---
-  void _editCam2Ip() {
-    TextEditingController ipController = TextEditingController(text: cam2Ip);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text("Changer l'IP Caméra 2"),
-          content: TextField(
-            controller: ipController,
-            decoration: const InputDecoration(labelText: "Adresse IP"),
-            keyboardType: TextInputType.number,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Annuler"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  cam2Ip = ipController.text;
-                });
-                Navigator.pop(context);
-              },
-              child: const Text("Sauvegarder"),
-            )
-          ],
-        );
-      }
-    );
-  }
-
   // --- BUILDERS UI ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("AW-RP50 : CAM $activeCam ($currentIp)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text("HE120 : CAM $activeCam (proxy)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         backgroundColor: Colors.black87,
         centerTitle: true,
-        actions: [
-          if (activeCam == 2)
-            IconButton(
-              icon: const Icon(Icons.edit, color: Colors.orangeAccent),
-              tooltip: "Changer l'IP",
-              onPressed: _editCam2Ip,
-            ),
-        ],
       ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -391,34 +349,48 @@ class _ControllerScreenState extends State<ControllerScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const Text("LUMINOSITE", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildAutoButton("AUTO", isAutoIris, (val) {
-              setState(() => isAutoIris = val);
-              sendCamCmd(val ? "D30" : "D31");
-            }),
-            const SizedBox(width: 16),
-            Column(
-              children: [
-                GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) => sendCamCmd("I99"),
-                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
-                  child: _buildIrisBtn(Icons.add, isAutoIris),
+            GestureDetector(
+              onTapDown: (_) {
+                pedestal = (pedestal + 10).clamp(0, 99);
+                sendCamCmd("P${pedestal.toInt().toString().padLeft(2, '0')}");
+              },
+              child: _buildIrisBtn(Icons.add, false),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () => sendCamCmd("P50"),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24, width: 1),
                 ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) => sendCamCmd("I01"),
-                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
-                  child: _buildIrisBtn(Icons.remove, isAutoIris),
-                ),
-              ],
+                child: Text("${pedestal.toInt()}", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTapDown: (_) {
+                pedestal = (pedestal - 10).clamp(0, 99);
+                sendCamCmd("P${pedestal.toInt().toString().padLeft(2, '0')}");
+              },
+              child: _buildIrisBtn(Icons.remove, false),
             ),
           ],
+        ),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () {
+            pedestal = 50;
+            sendCamCmd("P50");
+          },
+          child: Text("Reset", style: TextStyle(color: Colors.white38, fontSize: 10)),
         ),
       ],
     );
