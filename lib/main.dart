@@ -56,6 +56,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   String lastFocusCmd = "F50";
   
   bool isAutoFocus = false;
+  bool isAutoIris = true;
   double pedestal = 50;
 
   // Limiteur de vitesse (PTZ/Focus Speed)
@@ -74,9 +75,20 @@ class _ControllerScreenState extends State<ControllerScreen> {
     }
   }
 
-  // Envoi de commande HTTP CAM (Focus/Iris via aw_ptz compatible HE120)
+  // Envoi de commande HTTP PTZ (Pan/Tilt/Zoom/Focus/Iris)
   Future<void> sendCamCmd(String cmdStr) async {
     final url = Uri.parse('$proxyBase/cgi-bin/aw_ptz?cmd=%23$cmdStr&res=1');
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
+    try {
+      await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
+    } catch (e) {
+      // Ignorer
+    }
+  }
+
+  // Envoi de commande via aw_cam (réglages image, iris mode)
+  Future<void> sendCamSetup(String cmdStr) async {
+    final url = Uri.parse('$proxyBase/cgi-bin/aw_cam?cmd=$cmdStr&res=1');
     final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
     try {
       await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
@@ -349,48 +361,40 @@ class _ControllerScreenState extends State<ControllerScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text("LUMINOSITE", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            GestureDetector(
-              onTapDown: (_) {
-                pedestal = (pedestal + 10).clamp(0, 99);
-                sendCamCmd("P${pedestal.toInt().toString().padLeft(2, '0')}");
-              },
-              child: _buildIrisBtn(Icons.add, false),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () => sendCamCmd("P50"),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black45,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white24, width: 1),
+            _buildAutoButton("AUTO", isAutoIris, (val) {
+              setState(() => isAutoIris = val);
+              sendCamSetup("ORS:${val ? 1 : 0}");
+            }),
+            const SizedBox(width: 16),
+            Column(
+              children: [
+                GestureDetector(
+                  onTapDown: isAutoIris ? null : (_) {
+                    sendCamSetup("ORS:0");
+                    sendCamCmd("I99");
+                  },
+                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+                  child: _buildIrisBtn(Icons.add, isAutoIris),
                 ),
-                child: Text("${pedestal.toInt()}", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTapDown: (_) {
-                pedestal = (pedestal - 10).clamp(0, 99);
-                sendCamCmd("P${pedestal.toInt().toString().padLeft(2, '0')}");
-              },
-              child: _buildIrisBtn(Icons.remove, false),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTapDown: isAutoIris ? null : (_) {
+                    sendCamSetup("ORS:0");
+                    sendCamCmd("I01");
+                  },
+                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+                  child: _buildIrisBtn(Icons.remove, isAutoIris),
+                ),
+              ],
             ),
           ],
-        ),
-        const SizedBox(height: 6),
-        GestureDetector(
-          onTap: () {
-            pedestal = 50;
-            sendCamCmd("P50");
-          },
-          child: Text("Reset", style: TextStyle(color: Colors.white38, fontSize: 10)),
         ),
       ],
     );
