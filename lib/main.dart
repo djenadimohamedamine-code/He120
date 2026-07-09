@@ -57,8 +57,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   
   bool isAutoFocus = false;
   bool isAutoIris = true;
-  double pedestal = 50;
-  Timer? _irisTimer;
+  double irisValue = 50;
 
   // Limiteur de vitesse (PTZ/Focus Speed)
   double globalSpeedScale = 1.0; 
@@ -358,19 +357,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  void _irisStart(String dir) {
+  void _setIris(double val) {
     sendCamSetup("ORS:0");
-    _irisStop();
-    sendCamSetup(dir);
-    _irisTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      sendCamSetup(dir);
-    });
-  }
-
-  void _irisStop() {
-    _irisTimer?.cancel();
-    _irisTimer = null;
-    sendCamSetup("LIT");
+    sendCamCmd("I${val.toInt().toString().padLeft(2, '0')}");
   }
 
   Widget _buildIrisSection() {
@@ -378,32 +367,33 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
+        _buildAutoButton("AUTO", isAutoIris, (val) {
+          setState(() => isAutoIris = val);
+          sendCamSetup("ORS:${val ? 1 : 0}");
+        }),
+        const SizedBox(height: 12),
+        Slider(
+          value: irisValue,
+          min: 1,
+          max: 99,
+          divisions: 98,
+          activeColor: activeCam == 1 ? Colors.green : Colors.orange,
+          onChanged: (val) {
+            setState(() => irisValue = val);
+            _setIris(val);
+          },
+        ),
+        Text("${irisValue.toInt()}", style: const TextStyle(color: Colors.white70, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildAutoButton("AUTO", isAutoIris, (val) {
-              setState(() => isAutoIris = val);
-              sendCamSetup("ORS:${val ? 1 : 0}");
-            }),
-            const SizedBox(width: 16),
-            Column(
-              children: [
-                GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) => _irisStart("LIO"),
-                  onTapUp: isAutoIris ? null : (_) => _irisStop(),
-                  onTapCancel: isAutoIris ? null : () => _irisStop(),
-                  child: _buildIrisBtn(Icons.add, isAutoIris),
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) => _irisStart("LIC"),
-                  onTapUp: isAutoIris ? null : (_) => _irisStop(),
-                  onTapCancel: isAutoIris ? null : () => _irisStop(),
-                  child: _buildIrisBtn(Icons.remove, isAutoIris),
-                ),
-              ],
-            ),
+            _irisPreset("Fermé", 1),
+            _irisPreset("Sombre", 20),
+            _irisPreset("Normal", 50),
+            _irisPreset("Clair", 80),
+            _irisPreset("Ouvert", 99),
           ],
         ),
       ],
@@ -536,17 +526,24 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  Widget _buildIrisBtn(IconData icon, bool disabled) {
-    Color themeColor = activeCam == 1 ? Colors.green : Colors.orange;
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        color: Colors.black45,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: disabled ? Colors.white12 : themeColor.withOpacity(0.5), width: 2),
+  Widget _irisPreset(String label, int val) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: GestureDetector(
+        onTap: () {
+          setState(() => irisValue = val.toDouble());
+          _setIris(val.toDouble());
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black45,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white24, width: 1),
+          ),
+          child: Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10)),
+        ),
       ),
-      child: Icon(icon, color: disabled ? Colors.white24 : themeColor, size: 24),
     );
   }
 
