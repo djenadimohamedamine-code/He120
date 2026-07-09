@@ -58,6 +58,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool isAutoFocus = false;
   bool isAutoIris = false;
 
+  // Limiteur de vitesse (PTZ/Focus Speed)
+  double globalSpeedScale = 1.0; 
+
   String get currentIp => activeCam == 1 ? cam1Ip : cam2Ip;
 
   // Envoi de commande HTTP PTZ (Pan/Tilt/Zoom)
@@ -86,13 +89,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
   int calculateProportionalSpeed(double normalizedValue) {
     // normalizedValue entre -1.0 et 1.0
     double curve = normalizedValue.sign * pow(normalizedValue.abs(), 2.0); 
+    // Appliquer le limiteur de vitesse
+    curve = curve * globalSpeedScale;
     int speed = (50 + (curve * 49)).round();
     return speed.clamp(1, 99);
   }
 
   // --- JOYSTICK PAN/TILT ---
   Offset _joystickPos = Offset.zero;
-  final double _joystickRadius = 120.0;
+  final double _joystickRadius = 100.0;
   
   void _onJoystickUpdate(Offset localPosition) {
     Offset center = Offset(_joystickRadius, _joystickRadius);
@@ -131,7 +136,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   // --- JOYSTICK ZOOM ---
   Offset _zoomPos = Offset.zero;
-  final double _sliderRadius = 100.0;
+  final double _sliderRadius = 80.0;
   
   void _onZoomUpdate(double dy) {
     double clampedDy = dy.clamp(-_sliderRadius, _sliderRadius);
@@ -218,7 +223,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Contrôle : CAM $activeCam ($currentIp)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text("AW-RP50 : CAM $activeCam ($currentIp)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         backgroundColor: Colors.black87,
         centerTitle: true,
         actions: [
@@ -230,52 +235,92 @@ class _ControllerScreenState extends State<ControllerScreen> {
             ),
         ],
       ),
-      body: Column(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // SÉLECTEUR DE CAMÉRA
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            color: Colors.white10,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _camSelector(1, "CAMÉRA 1", Colors.green),
-                const SizedBox(width: 20),
-                _camSelector(2, "CAMÉRA 2", Colors.orange),
-              ],
-            ),
+          // GAUCHE : IRIS & ZOOM
+          Expanded(
+            flex: 2,
+            child: _buildLeftZone(),
           ),
           
+          // CENTRE : CAMERAS, PRESETS & FOCUS
           Expanded(
-            child: Row(
-              children: [
-                // GAUCHE : JOYSTICK PAN/TILT
-                Expanded(
-                  flex: 3,
-                  child: _buildPanTiltSection(),
-                ),
-                
-                // CENTRE : FOCUS & IRIS
-                Expanded(
-                  flex: 4,
-                  child: Row(
-                    children: [
-                      Expanded(child: _buildFocusSection()),
-                      Expanded(child: _buildIrisAndPresetsSection()),
-                    ],
-                  ),
-                ),
-
-                // DROITE : ZOOM
-                Expanded(
-                  flex: 2,
-                  child: _buildZoomSection(),
-                )
-              ],
-            ),
+            flex: 4,
+            child: _buildCenterZone(),
           ),
+
+          // DROITE : SPEED LIMITER & PAN/TILT
+          Expanded(
+            flex: 3,
+            child: _buildRightZone(),
+          )
         ],
       ),
+    );
+  }
+
+  Widget _buildLeftZone() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildIrisSection(),
+        _buildZoomSection(),
+      ],
+    );
+  }
+
+  Widget _buildCenterZone() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _camSelector(1, "CAM 1", Colors.green),
+                const SizedBox(width: 16),
+                _camSelector(2, "CAM 2", Colors.orange),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildPresets(),
+          ],
+        ),
+        _buildFocusSection(),
+      ],
+    );
+  }
+
+  Widget _buildRightZone() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildSpeedLimiter(),
+        _buildPanTiltSection(),
+      ],
+    );
+  }
+
+  Widget _buildSpeedLimiter() {
+    return Column(
+      children: [
+        const Text("PTZ/FOCUS SPEED", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1)),
+        Slider(
+          value: globalSpeedScale,
+          min: 0.1,
+          max: 1.0,
+          activeColor: activeCam == 1 ? Colors.green : Colors.orange,
+          inactiveColor: Colors.white24,
+          onChanged: (val) {
+            setState(() {
+              globalSpeedScale = val;
+            });
+          },
+        ),
+        Text("Limiteur : ${(globalSpeedScale * 100).toInt()}%", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+      ],
     );
   }
 
@@ -284,7 +329,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("PAN / TILT", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         GestureDetector(
           onPanUpdate: (details) => _onJoystickUpdate(details.localPosition),
           onPanEnd: (_) => _onJoystickEnd(),
@@ -304,8 +349,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 Transform.translate(
                   offset: _joystickPos,
                   child: Container(
-                    width: 70,
-                    height: 70,
+                    width: 60,
+                    height: 60,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: activeCam == 1 ? Colors.green : Colors.orange,
@@ -326,56 +371,71 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("FOCUS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 16),
-        _buildAutoButton("AUTO FOCUS", isAutoFocus, (val) {
-          setState(() => isAutoFocus = val);
-          sendCamCmd(val ? "D10" : "D11");
-        }),
-        const SizedBox(height: 20),
-        _buildVerticalSlider(_focusPos, _onFocusUpdate, _onFocusEnd, isAutoFocus),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildAutoButton("AUTO", isAutoFocus, (val) {
+              setState(() => isAutoFocus = val);
+              sendCamCmd(val ? "D10" : "D11");
+            }),
+            const SizedBox(width: 20),
+            _buildVerticalSlider(_focusPos, _onFocusUpdate, _onFocusEnd, isAutoFocus),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildIrisAndPresetsSection() {
+  Widget _buildIrisSection() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 16),
-        _buildAutoButton("AUTO IRIS", isAutoIris, (val) {
-          setState(() => isAutoIris = val);
-          sendCamCmd(val ? "D30" : "D31");
-        }),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            GestureDetector(
-              onTapDown: isAutoIris ? null : (_) => sendCamCmd("I01"),
-              onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-              onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
-              child: _buildIrisBtn(Icons.remove, isAutoIris),
-            ),
+            _buildAutoButton("AUTO", isAutoIris, (val) {
+              setState(() => isAutoIris = val);
+              sendCamCmd(val ? "D30" : "D31");
+            }),
             const SizedBox(width: 16),
-            GestureDetector(
-              onTapDown: isAutoIris ? null : (_) => sendCamCmd("I99"),
-              onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-              onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
-              child: _buildIrisBtn(Icons.add, isAutoIris),
+            Column(
+              children: [
+                GestureDetector(
+                  onTapDown: isAutoIris ? null : (_) => sendCamCmd("I99"),
+                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+                  child: _buildIrisBtn(Icons.add, isAutoIris),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTapDown: isAutoIris ? null : (_) => sendCamCmd("I01"),
+                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+                  child: _buildIrisBtn(Icons.remove, isAutoIris),
+                ),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 30),
-        const Text("PRESETS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildPresets() {
+    return Column(
+      children: [
+        const Text("PRESET MEMORY", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 12)),
+        const SizedBox(height: 10),
         SizedBox(
-          width: 200,
+          width: 240,
           child: GridView.count(
             shrinkWrap: true,
             crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
             childAspectRatio: 1.5,
             physics: const NeverScrollableScrollPhysics(),
             children: List.generate(6, (i) {
@@ -384,7 +444,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   padding: EdgeInsets.zero,
                   backgroundColor: activeCam == 1 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                     side: BorderSide(color: activeCam == 1 ? Colors.green : Colors.orange, width: 1),
                   ),
                 ),
@@ -403,7 +463,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("ZOOM", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         _buildVerticalSlider(_zoomPos, _onZoomUpdate, _onZoomEnd, false),
       ],
     );
@@ -416,27 +476,27 @@ class _ControllerScreenState extends State<ControllerScreen> {
       },
       onVerticalDragEnd: disabled ? null : (_) => onEnd(),
       child: Container(
-        width: 80,
+        width: 60,
         height: _sliderRadius * 2,
         decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(40),
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(30),
           border: Border.all(color: disabled ? Colors.white12 : Colors.white24, width: 2),
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Container(height: 2, width: 40, color: Colors.white24),
+            Container(height: 2, width: 30, color: Colors.white24),
             Transform.translate(
               offset: pos,
               child: Container(
-                width: 60,
-                height: 60,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: disabled ? Colors.white24 : (activeCam == 1 ? Colors.green : Colors.orange),
                   boxShadow: disabled ? [] : [
-                    BoxShadow(color: (activeCam == 1 ? Colors.green : Colors.orange).withOpacity(0.5), blurRadius: 10)
+                    BoxShadow(color: (activeCam == 1 ? Colors.green : Colors.orange).withOpacity(0.5), blurRadius: 8)
                   ]
                 ),
                 child: Center(
@@ -454,26 +514,26 @@ class _ControllerScreenState extends State<ControllerScreen> {
     return GestureDetector(
       onTap: () => onChanged(!isActive),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(8),
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(color: isActive ? Colors.red : Colors.white24, width: 1),
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isActive ? Colors.red : Colors.black45,
-                boxShadow: isActive ? [const BoxShadow(color: Colors.red, blurRadius: 8)] : [],
+                color: isActive ? Colors.red : Colors.black26,
+                boxShadow: isActive ? [const BoxShadow(color: Colors.red, blurRadius: 6)] : [],
               ),
             ),
-            const SizedBox(width: 12),
-            Text(label, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text(label, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 10)),
           ],
         ),
       ),
@@ -483,14 +543,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
   Widget _buildIrisBtn(IconData icon, bool disabled) {
     Color themeColor = activeCam == 1 ? Colors.green : Colors.orange;
     return Container(
-      width: 60,
-      height: 60,
+      width: 50,
+      height: 50,
       decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.black45,
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: disabled ? Colors.white12 : themeColor.withOpacity(0.5), width: 2),
       ),
-      child: Icon(icon, color: disabled ? Colors.white24 : themeColor, size: 30),
+      child: Icon(icon, color: disabled ? Colors.white24 : themeColor, size: 24),
     );
   }
 
@@ -503,20 +563,20 @@ class _ControllerScreenState extends State<ControllerScreen> {
         });
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.3) : Colors.transparent,
-          borderRadius: BorderRadius.circular(30),
+          color: isSelected ? color.withOpacity(0.3) : Colors.black45,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: isSelected ? color : Colors.white24, width: 2),
         ),
         child: Row(
           children: [
-            Icon(Icons.videocam, color: isSelected ? color : Colors.white54),
+            Icon(Icons.videocam, color: isSelected ? color : Colors.white54, size: 18),
             const SizedBox(width: 8),
             Text(label, style: TextStyle(
               color: isSelected ? Colors.white : Colors.white54,
               fontWeight: FontWeight.bold,
-              fontSize: 16
+              fontSize: 14
             )),
           ],
         ),
