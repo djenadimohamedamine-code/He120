@@ -449,6 +449,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   ),
                 ),
                 onPressed: () => sendCmd("R${i.toString().padLeft(2, '0')}"),
+                onLongPress: () {
+                  sendCmd("M${i.toString().padLeft(2, '0')}");
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Preset ${i + 1} enregistré pour la Caméra $activeCam", textAlign: TextAlign.center),
+                      duration: const Duration(seconds: 2),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
                 child: Text("${i + 1}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
               );
             }),
