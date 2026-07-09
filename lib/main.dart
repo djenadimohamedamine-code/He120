@@ -378,8 +378,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     sendCamSetup("ORS:0");
                     sendCamCmd("I99");
                   },
-                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
                   child: _buildIrisBtn(Icons.add, isAutoIris),
                 ),
                 const SizedBox(height: 8),
@@ -388,8 +386,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
                     sendCamSetup("ORS:0");
                     sendCamCmd("I01");
                   },
-                  onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
-                  onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
                   child: _buildIrisBtn(Icons.remove, isAutoIris),
                 ),
               ],
