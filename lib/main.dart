@@ -58,6 +58,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool isAutoFocus = false;
   bool isAutoIris = true;
   double pedestal = 50;
+  Timer? _irisTimer;
 
   // Limiteur de vitesse (PTZ/Focus Speed)
   double globalSpeedScale = 1.0; 
@@ -357,6 +358,21 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  void _irisStart(String dir) {
+    sendCamSetup("ORS:0");
+    _irisStop();
+    sendCamSetup(dir);
+    _irisTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      sendCamSetup(dir);
+    });
+  }
+
+  void _irisStop() {
+    _irisTimer?.cancel();
+    _irisTimer = null;
+    sendCamSetup("LIT");
+  }
+
   Widget _buildIrisSection() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -374,18 +390,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
             Column(
               children: [
                 GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) {
-                    sendCamSetup("ORS:0");
-                    sendCamCmd("I99");
-                  },
+                  onTapDown: isAutoIris ? null : (_) => _irisStart("LIO"),
+                  onTapUp: isAutoIris ? null : (_) => _irisStop(),
+                  onTapCancel: isAutoIris ? null : () => _irisStop(),
                   child: _buildIrisBtn(Icons.add, isAutoIris),
                 ),
                 const SizedBox(height: 8),
                 GestureDetector(
-                  onTapDown: isAutoIris ? null : (_) {
-                    sendCamSetup("ORS:0");
-                    sendCamCmd("I01");
-                  },
+                  onTapDown: isAutoIris ? null : (_) => _irisStart("LIC"),
+                  onTapUp: isAutoIris ? null : (_) => _irisStop(),
+                  onTapCancel: isAutoIris ? null : () => _irisStop(),
                   child: _buildIrisBtn(Icons.remove, isAutoIris),
                 ),
               ],
