@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -41,7 +42,7 @@ class ControllerScreen extends StatefulWidget {
 class _ControllerScreenState extends State<ControllerScreen> {
   // IPs des caméras
   String cam1Ip = "192.168.0.10";
-  String cam2Ip = "192.168.0.11"; // IP par défaut, modifiable
+  String cam2Ip = "192.168.0.11"; 
   
   // Caméra active (1 ou 2)
   int activeCam = 1;
@@ -49,24 +50,49 @@ class _ControllerScreenState extends State<ControllerScreen> {
   final String camUser = "admin";
   final String camPass = "12345";
   
+  // États de contrôle
   String lastPtzCmd = "PTS5050";
+  String lastZoomCmd = "Z50";
+  String lastFocusCmd = "F50";
   
+  bool isAutoFocus = false;
+  bool isAutoIris = false;
+
   String get currentIp => activeCam == 1 ? cam1Ip : cam2Ip;
 
-  // Envoi de commande HTTP
+  // Envoi de commande HTTP PTZ (Pan/Tilt/Zoom)
   Future<void> sendCmd(String cmdStr) async {
     final url = Uri.parse('http://$currentIp/cgi-bin/aw_ptz?cmd=%23$cmdStr&res=1');
     final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
     try {
       await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
     } catch (e) {
-      // Ignorer silencieusement
+      // Ignorer
     }
   }
 
-  // --- JOYSTICK LOGIC ---
+  // Envoi de commande HTTP CAM (Focus/Iris)
+  Future<void> sendCamCmd(String cmdStr) async {
+    final url = Uri.parse('http://$currentIp/cgi-bin/aw_cam?cmd=%23$cmdStr&res=1');
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
+    try {
+      await http.get(url, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 500));
+    } catch (e) {
+      // Ignorer
+    }
+  }
+
+  // Fonction de calcul exponentiel pour la sensibilité
+  int calculateProportionalSpeed(double normalizedValue) {
+    // normalizedValue entre -1.0 et 1.0
+    double curve = normalizedValue.sign * pow(normalizedValue.abs(), 2.0); 
+    int speed = (50 + (curve * 49)).round();
+    return speed.clamp(1, 99);
+  }
+
+  // --- JOYSTICK PAN/TILT ---
   Offset _joystickPos = Offset.zero;
-  final double _joystickRadius = 100.0;
+  final double _joystickRadius = 120.0;
   
   void _onJoystickUpdate(Offset localPosition) {
     Offset center = Offset(_joystickRadius, _joystickRadius);
@@ -84,8 +110,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
     double normX = diff.dx / _joystickRadius; 
     double normY = diff.dy / _joystickRadius; 
 
-    int pan = (50 + (normX * 49)).round().clamp(1, 99);
-    int tilt = (50 - (normY * 49)).round().clamp(1, 99);
+    int pan = calculateProportionalSpeed(normX);
+    int tilt = calculateProportionalSpeed(-normY);
 
     String ptz = "PTS${pan.toString().padLeft(2, '0')}${tilt.toString().padLeft(2, '0')}";
     
@@ -103,12 +129,54 @@ class _ControllerScreenState extends State<ControllerScreen> {
     sendCmd("PTS5050");
   }
 
-  // --- BOUTONS ZOOM ---
-  void _startZoom(bool zoomIn) {
-    sendCmd(zoomIn ? "Z99" : "Z01");
+  // --- JOYSTICK ZOOM ---
+  Offset _zoomPos = Offset.zero;
+  final double _sliderRadius = 100.0;
+  
+  void _onZoomUpdate(double dy) {
+    double clampedDy = dy.clamp(-_sliderRadius, _sliderRadius);
+    setState(() => _zoomPos = Offset(0, clampedDy));
+    
+    double normY = clampedDy / _sliderRadius;
+    int zoom = calculateProportionalSpeed(-normY); // Haut = Z51~Z99 (IN), Bas = Z49~Z01 (OUT)
+    String zCmd = "Z${zoom.toString().padLeft(2, '0')}";
+    
+    if (zCmd != lastZoomCmd) {
+      lastZoomCmd = zCmd;
+      sendCmd(zCmd);
+    }
   }
-  void _stopZoom() {
+
+  void _onZoomEnd() {
+    setState(() => _zoomPos = Offset.zero);
+    lastZoomCmd = "Z50";
     sendCmd("Z50");
+  }
+
+  // --- JOYSTICK FOCUS ---
+  Offset _focusPos = Offset.zero;
+  
+  void _onFocusUpdate(double dy) {
+    if (isAutoFocus) return;
+    double clampedDy = dy.clamp(-_sliderRadius, _sliderRadius);
+    setState(() => _focusPos = Offset(0, clampedDy));
+    
+    double normY = clampedDy / _sliderRadius;
+    int focus = calculateProportionalSpeed(-normY); // Haut = Near, Bas = Far
+    String fCmd = "F${focus.toString().padLeft(2, '0')}";
+    
+    if (fCmd != lastFocusCmd) {
+      lastFocusCmd = fCmd;
+      sendCamCmd(fCmd);
+    }
+  }
+
+  void _onFocusEnd() {
+    setState(() => _focusPos = Offset.zero);
+    lastFocusCmd = "F50";
+    if (!isAutoFocus) {
+      sendCamCmd("F50");
+    }
   }
 
   // --- BOITE DE DIALOGUE IP CAM 2 ---
@@ -145,6 +213,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  // --- BUILDERS UI ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -180,108 +249,248 @@ class _ControllerScreenState extends State<ControllerScreen> {
           Expanded(
             child: Row(
               children: [
-                // GAUCHE : JOYSTICK
-                Expanded(
-                  flex: 2,
-                  child: Center(
-                    child: GestureDetector(
-                      onPanUpdate: (details) => _onJoystickUpdate(details.localPosition),
-                      onPanEnd: (_) => _onJoystickEnd(),
-                      child: Container(
-                        width: _joystickRadius * 2,
-                        height: _joystickRadius * 2,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white10,
-                          border: Border.all(color: Colors.white24, width: 2),
-                        ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Transform.translate(
-                              offset: _joystickPos,
-                              child: Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: activeCam == 1 ? Colors.green : Colors.orange,
-                                  boxShadow: [BoxShadow(color: (activeCam == 1 ? Colors.green : Colors.orange).withOpacity(0.5), blurRadius: 10)],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // CENTRE : PRESETS
+                // GAUCHE : JOYSTICK PAN/TILT
                 Expanded(
                   flex: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text("PRESETS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-                        const SizedBox(height: 16),
-                        GridView.count(
-                          shrinkWrap: true,
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 1.5,
-                          physics: const NeverScrollableScrollPhysics(),
-                          children: List.generate(6, (i) {
-                            return ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: activeCam == 1 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(color: activeCam == 1 ? Colors.green : Colors.orange, width: 1),
-                                ),
-                              ),
-                              onPressed: () => sendCmd("R${i.toString().padLeft(2, '0')}"),
-                              child: Text("PLAN ${i + 1}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                            );
-                          }),
-                        ),
-                      ],
-                    ),
+                  child: _buildPanTiltSection(),
+                ),
+                
+                // CENTRE : FOCUS & IRIS
+                Expanded(
+                  flex: 4,
+                  child: Row(
+                    children: [
+                      Expanded(child: _buildFocusSection()),
+                      Expanded(child: _buildIrisAndPresetsSection()),
+                    ],
                   ),
                 ),
 
                 // DROITE : ZOOM
                 Expanded(
-                  flex: 1,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text("ZOOM", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-                      const SizedBox(height: 20),
-                      GestureDetector(
-                        onTapDown: (_) => _startZoom(true),
-                        onTapUp: (_) => _stopZoom(),
-                        onTapCancel: () => _stopZoom(),
-                        child: _zoomBtn(Icons.add, "IN", Colors.white70),
-                      ),
-                      const SizedBox(height: 20),
-                      GestureDetector(
-                        onTapDown: (_) => _startZoom(false),
-                        onTapUp: (_) => _stopZoom(),
-                        onTapCancel: () => _stopZoom(),
-                        child: _zoomBtn(Icons.remove, "OUT", Colors.white70),
-                      ),
-                    ],
-                  ),
+                  flex: 2,
+                  child: _buildZoomSection(),
                 )
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPanTiltSection() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text("PAN / TILT", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 20),
+        GestureDetector(
+          onPanUpdate: (details) => _onJoystickUpdate(details.localPosition),
+          onPanEnd: (_) => _onJoystickEnd(),
+          child: Container(
+            width: _joystickRadius * 2,
+            height: _joystickRadius * 2,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white10,
+              border: Border.all(color: Colors.white24, width: 2),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(width: 2, height: 20, color: Colors.white24),
+                Container(width: 20, height: 2, color: Colors.white24),
+                Transform.translate(
+                  offset: _joystickPos,
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: activeCam == 1 ? Colors.green : Colors.orange,
+                      boxShadow: [BoxShadow(color: (activeCam == 1 ? Colors.green : Colors.orange).withOpacity(0.5), blurRadius: 10)],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFocusSection() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text("FOCUS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 16),
+        _buildAutoButton("AUTO FOCUS", isAutoFocus, (val) {
+          setState(() => isAutoFocus = val);
+          sendCamCmd(val ? "D10" : "D11");
+        }),
+        const SizedBox(height: 20),
+        _buildVerticalSlider(_focusPos, _onFocusUpdate, _onFocusEnd, isAutoFocus),
+      ],
+    );
+  }
+
+  Widget _buildIrisAndPresetsSection() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 16),
+        _buildAutoButton("AUTO IRIS", isAutoIris, (val) {
+          setState(() => isAutoIris = val);
+          sendCamCmd(val ? "D30" : "D31");
+        }),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTapDown: isAutoIris ? null : (_) => sendCamCmd("I01"),
+              onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+              onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+              child: _buildIrisBtn(Icons.remove, isAutoIris),
+            ),
+            const SizedBox(width: 16),
+            GestureDetector(
+              onTapDown: isAutoIris ? null : (_) => sendCamCmd("I99"),
+              onTapUp: isAutoIris ? null : (_) => sendCamCmd("I50"),
+              onTapCancel: isAutoIris ? null : () => sendCamCmd("I50"),
+              child: _buildIrisBtn(Icons.add, isAutoIris),
+            ),
+          ],
+        ),
+        const SizedBox(height: 30),
+        const Text("PRESETS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: 200,
+          child: GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 3,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 1.5,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(6, (i) {
+              return ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  backgroundColor: activeCam == 1 ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: activeCam == 1 ? Colors.green : Colors.orange, width: 1),
+                  ),
+                ),
+                onPressed: () => sendCmd("R${i.toString().padLeft(2, '0')}"),
+                child: Text("${i + 1}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildZoomSection() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text("ZOOM", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        const SizedBox(height: 20),
+        _buildVerticalSlider(_zoomPos, _onZoomUpdate, _onZoomEnd, false),
+      ],
+    );
+  }
+
+  Widget _buildVerticalSlider(Offset pos, Function(double) onUpdate, VoidCallback onEnd, bool disabled) {
+    return GestureDetector(
+      onVerticalDragUpdate: disabled ? null : (details) {
+        onUpdate(details.localPosition.dy - _sliderRadius);
+      },
+      onVerticalDragEnd: disabled ? null : (_) => onEnd(),
+      child: Container(
+        width: 80,
+        height: _sliderRadius * 2,
+        decoration: BoxDecoration(
+          color: Colors.white10,
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: disabled ? Colors.white12 : Colors.white24, width: 2),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(height: 2, width: 40, color: Colors.white24),
+            Transform.translate(
+              offset: pos,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: disabled ? Colors.white24 : (activeCam == 1 ? Colors.green : Colors.orange),
+                  boxShadow: disabled ? [] : [
+                    BoxShadow(color: (activeCam == 1 ? Colors.green : Colors.orange).withOpacity(0.5), blurRadius: 10)
+                  ]
+                ),
+                child: Center(
+                  child: Icon(Icons.unfold_more, color: disabled ? Colors.black26 : Colors.white54),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutoButton(String label, bool isActive, Function(bool) onChanged) {
+    return GestureDetector(
+      onTap: () => onChanged(!isActive),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white10,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? Colors.red : Colors.white24, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isActive ? Colors.red : Colors.black45,
+                boxShadow: isActive ? [const BoxShadow(color: Colors.red, blurRadius: 8)] : [],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(label, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIrisBtn(IconData icon, bool disabled) {
+    Color themeColor = activeCam == 1 ? Colors.green : Colors.orange;
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: disabled ? Colors.white12 : themeColor.withOpacity(0.5), width: 2),
+      ),
+      child: Icon(icon, color: disabled ? Colors.white24 : themeColor, size: 30),
     );
   }
 
@@ -311,26 +520,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
             )),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _zoomBtn(IconData icon, String label, Color color) {
-    Color themeColor = activeCam == 1 ? Colors.green : Colors.orange;
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: themeColor.withOpacity(0.5), width: 2),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: themeColor, size: 36),
-          Text(label, style: TextStyle(color: themeColor, fontWeight: FontWeight.bold)),
-        ],
       ),
     );
   }
