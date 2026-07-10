@@ -58,6 +58,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool isAutoFocus = false;
   bool isAutoIris = true;
   double irisValue = 50;
+  String _lastIrisValue = '';
+  Timer? _irisThrottle;
 
   // Limiteur de vitesse (PTZ/Focus Speed)
   double globalSpeedScale = 1.0; 
@@ -148,7 +150,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   // --- JOYSTICK ZOOM ---
   Offset _zoomPos = Offset.zero;
-  final double _sliderRadius = 80.0;
+  final double _sliderRadius = 55.0;
   
   void _onZoomUpdate(double dy) {
     double clampedDy = dy.clamp(-_sliderRadius, _sliderRadius);
@@ -232,10 +234,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   Widget _buildLeftZone() {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildIrisSection(),
-        _buildZoomSection(),
+        Expanded(child: _buildZoomSection()),
       ],
     );
   }
@@ -252,13 +253,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 _camSelector(1, "CAM 1", Colors.green),
                 const SizedBox(width: 16),
                 _camSelector(2, "CAM 2", Colors.orange),
+                const SizedBox(width: 16),
+                _buildAwbButton(),
               ],
             ),
             const SizedBox(height: 20),
             _buildPresets(),
           ],
         ),
-        _buildFocusSection(),
+        Expanded(child: _buildFocusSection()),
       ],
     );
   }
@@ -358,8 +361,47 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   void _setIris(double val) {
-    sendCamSetup("ORS:0");
-    sendCamCmd("I${val.toInt().toString().padLeft(2, '0')}");
+    String cmd = val.toInt().toString().padLeft(2, '0');
+    if (cmd == _lastIrisValue) return;
+    _lastIrisValue = cmd;
+    _irisThrottle?.cancel();
+    _irisThrottle = Timer(Duration(milliseconds: 150), () {
+      sendCamSetup("ORS:0");
+      sendCamCmd("I$cmd");
+    });
+  }
+
+  void _triggerAwb() {
+    sendCmd("AW");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text("AWB en cours..."),
+        duration: const Duration(seconds: 1),
+        backgroundColor: Colors.blue,
+      ),
+    );
+  }
+
+  Widget _buildAwbButton() {
+    return GestureDetector(
+      onTap: _triggerAwb,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white, width: 1.5),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.blur_on, color: Colors.white, size: 18),
+            SizedBox(width: 6),
+            Text("AWB", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildIrisSection() {
@@ -369,7 +411,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
         const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
         const SizedBox(height: 8),
         _buildAutoButton("AUTO", isAutoIris, (val) {
-          setState(() => isAutoIris = val);
+          setState(() {
+            isAutoIris = val;
+            _lastIrisValue = '';
+          });
           sendCamSetup("ORS:${val ? 1 : 0}");
         }),
         const SizedBox(height: 12),
