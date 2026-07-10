@@ -202,11 +202,6 @@ class _ControllerScreenState extends State<ControllerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("HE120 : CAM $activeCam (proxy)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        backgroundColor: Colors.black87,
-        centerTitle: true,
-      ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -236,6 +231,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     return Column(
       children: [
         _buildIrisSection(),
+        const SizedBox(height: 4),
         Expanded(child: _buildZoomSection()),
       ],
     );
@@ -257,7 +253,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
                 _buildAwbButton(),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
             _buildPresets(),
           ],
         ),
@@ -344,7 +340,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("FOCUS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -409,7 +405,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const Text("IRIS", style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, letterSpacing: 2)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         _buildAutoButton("AUTO", isAutoIris, (val) {
           setState(() {
             isAutoIris = val;
