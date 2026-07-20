@@ -111,6 +111,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   // Track which camera was last controlled via joystick
   int _lastJoystickCam = 1;
+  final double _joystickRadius = 80.0;
+  Offset _joystickPos = Offset.zero;
 
   void _onJoystickUpdate(Offset localPosition) {
     _lastJoystickCam = activeCam; // Remember which cam we're controlling
