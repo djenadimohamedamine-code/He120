@@ -40,8 +40,8 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
-  // Proxy relais (IP du PC sur le réseau Wi-Fi local)
-  String proxyHost = "10.186.210.29";
+  // Proxy relais (IP du PC sur le réseau local)
+  String proxyHost = "192.168.1.50";
   late TextEditingController _ipController;
   final int proxyPort = 8098;
   
