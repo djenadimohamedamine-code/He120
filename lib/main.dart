@@ -40,8 +40,8 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
-  // Proxy relais (IP du PC sur le WiFi)
-  final String proxyHost = "192.168.1.30";
+  // Proxy relais (IP du PC sur le réseau 192.168.1.x)
+  final String proxyHost = "192.168.1.50";
   final int proxyPort = 8098;
   
   // Caméra active (1 ou 2)
@@ -109,11 +109,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
     return speed.clamp(1, 99);
   }
 
-  // --- JOYSTICK PAN/TILT ---
-  Offset _joystickPos = Offset.zero;
-  final double _joystickRadius = 100.0;
-  
+  // Track which camera was last controlled via joystick
+  int _lastJoystickCam = 1;
+
   void _onJoystickUpdate(Offset localPosition) {
+    _lastJoystickCam = activeCam; // Remember which cam we're controlling
     Offset center = Offset(_joystickRadius, _joystickRadius);
     Offset diff = localPosition - center;
     double distance = diff.distance;
@@ -145,7 +145,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
       _joystickPos = Offset.zero;
     });
     lastPtzCmd = "PTS5050";
-    sendCmd("PTS5050");
+    // Send stop to BOTH cameras to be safe
+    sendCmd("PTS5050"); // current active
+    // Also stop the other cam if different
+    int otherCam = activeCam == 1 ? 2 : 1;
+    final otherUrl = Uri.parse('http://$proxyHost:$proxyPort/cam$otherCam/cgi-bin/aw_ptz?cmd=%23PTS5050&res=1');
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode('$camUser:$camPass'))}';
+    http.get(otherUrl, headers: {'authorization': basicAuth}).timeout(const Duration(milliseconds: 300)).catchError((_) {});
   }
 
   // --- JOYSTICK ZOOM ---
