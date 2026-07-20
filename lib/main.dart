@@ -40,8 +40,9 @@ class ControllerScreen extends StatefulWidget {
 }
 
 class _ControllerScreenState extends State<ControllerScreen> {
-  // Proxy relais (IP du PC sur le réseau 192.168.1.x)
-  final String proxyHost = "192.168.1.50";
+  // Proxy relais (IP du PC sur le réseau Wi-Fi local)
+  String proxyHost = "10.186.210.29";
+  late TextEditingController _ipController;
   final int proxyPort = 8098;
   
   // Caméra active (1 ou 2)
@@ -63,6 +64,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   // Limiteur de vitesse (PTZ/Focus Speed)
   double globalSpeedScale = 1.0; 
+
+  @override
+  void initState() {
+    super.initState();
+    _ipController = TextEditingController(text: proxyHost);
+  }
 
   String get proxyBase => "http://$proxyHost:$proxyPort/cam$activeCam";
 
@@ -251,6 +258,28 @@ class _ControllerScreenState extends State<ControllerScreen> {
       children: [
         Column(
           children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text("IP PC: ", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                SizedBox(
+                  width: 130,
+                  height: 30,
+                  child: TextField(
+                    controller: _ipController,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                      filled: true,
+                      fillColor: Colors.black45,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (val) => proxyHost = val,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
